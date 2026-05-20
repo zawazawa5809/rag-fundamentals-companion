@@ -26,6 +26,9 @@ venv/
 *.log
 scratch/
 
+# Claude harness (auto-generated, never commit)
+.claude/
+
 # Build artifacts (none expected, but defensive)
 build/
 dist/
