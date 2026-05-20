@@ -8,32 +8,80 @@
 
 各 `.md` の冒頭に `<!-- License: CC0-1.0 -->` の per-file ヘッダがあります。
 
-## 構成
+## 設定
 
-`Cumulus Labs` は本 series 専用に設定した架空の B2B SaaS 企業です。実在する企業名・人物・URL・商標とは無関係です。
+「ハルナ・テクノロジーズ株式会社」(本店: 群馬県高崎市、東京本社: 渋谷区) は、本 series 専用に設定した架空の日本 IT 企業です。社員約 1,000 名、SaaS プロダクト **Stratus** (マルチテナント業務データ分析) と受託システム開発の両建てで、上場準備中という想定です。実在する企業名・人物・URL・商標とは無関係です。
 
-| File | 概要 | Part 利用想定 |
-| ---- | ---- | ------------- |
-| `cumulus-okr-2026q2.md` | OKR 定義と Q2 の Key Result | Part 1 / Part 2 |
-| `cumulus-north-star.md` | North Star Metric (WAS) の定義 | Part 1 (同義語 demo) |
-| `cumulus-pricing.md` | 価格表と支払い条件 | Part 1 / Part 2 |
-| `cumulus-support-escalation.md` | 3 段階エスカレーション | Part 2 / Part 3 |
-| `cumulus-oncall.md` | エンジニア on-call ローテ | Part 3 |
-| `cumulus-brand-voice.md` | brand voice 規範 | Part 1 (文体類似 trap 用) |
-| `cumulus-office-it.md` | 入社時 IT セットアップ | Part 2 / Part 4 |
-| `cumulus-hiring.md` | 採用 4 段階フロー | Part 4 (golden set) |
-| `cumulus-faq-customer.md` | 顧客 FAQ 10 件 | Part 1 / Part 4 |
-| `cumulus-bearista-coffee-review.md` | 社内マスコットのコーヒー豆評価 | **Part 1 distance trap demo** |
+## 構成 (10 件)
+
+### 一般社内ドキュメント (4 件)
+
+| File | 概要 |
+| ---- | ---- |
+| `haruna-remote-work.md` | リモートワーク制度・在宅勤務手当 |
+| `haruna-expense.md` | 経費精算ガイド (マネーフォワード経費、領収書ルール) |
+| `haruna-incident-flow.md` | 障害対応フロー (Sev1-Sev3) |
+| `haruna-faq-helpdesk.md` | 社内ヘルプデスク FAQ (人事・労務・IT 横断) |
+
+### 開発系ドキュメント (5 件) — **意図的に劣化** させた設計
+
+| File | 種別 | 劣化の種類 |
+| ---- | ---- | ---------- |
+| `stratus-architecture-v3.md` | アーキテクチャ図 v3 | **2023 年版・現行だが古い前提。v4 で見直し予定と注記** |
+| `stratus-microservice-boundaries-draft.md` | マイクロサービス境界 draft v1.2 | **承認前ドラフト・v3 と矛盾**。実装着手は最終承認後 |
+| `stratus-api-reference.md` | API リファレンス | **コード自動生成 (openapi-generator)・最新だが文体が完全に異質** |
+| `stratus-postmortem-2024-06.md` | 障害ポストモーテム | **古い Auth Service 設計を前提に書かれている** |
+| `pegasus-er-diagram.md` | レガシー Pegasus ER 図 | **作成日 2018 年推定、2023 年に軽微追記、現状の DB と乖離** |
+
+### 文体類似 trap (1 件)
+
+| File | 役割 |
+| ---- | ---- |
+| `haruna-club-painting.md` | お絵描き同好会の月例活動報告。**post-mortem や 1on1 振り返りシートと構造が酷似** (やったこと / 振り返り / Next Action)。内容は完全に無関係 |
 
 ## なぜこの corpus 設計か
 
-Part 2 以降の検索改善 (chunking / hybrid / reranker) が**数値で改善する**ことを示すためには、Part 1 の素朴な実装が「いかにも失敗しそう」な特徴を corpus に意図的に混入しておく必要があります。
+本シリーズの目標 (Part 1-5) は、「動く RAG」から「使える RAG」までの距離を可視化することです。そのために corpus 側に **教育目的の "仕込み"** を意図的に入れてあります。
 
-意図的に入れた特徴:
+### 仕込み 1: synonym / acronym 過密 (Part 2 hybrid 効く)
 
-- **synonym / acronym 過密**: OKR / KR / KPI / NSM / WAS / NAS — Part 2 BM25 hybrid の効果
-- **改訂履歴**: north-star.md に「2024 では MAU、2025 で WAS に変更」と書く → Part 2 freshness 議論
-- **文体類似 trap**: bearista-coffee-review が brand-voice ガイドと類似の文体トーン → Part 1 「距離 0.95 でも内容無関係」の demo
-- **cross-reference**: `See also: cumulus-X.md` 形式で文書間に明示的なリンクを置く → Part 5 grounding 議論
+社内文書あるある:
+- 「リモートワーク」「在宅勤務」「テレワーク」「WFH」
+- 「障害」「インシデント」「トラブル」「Sev」
+- 「経費」「立替」「精算」「PR」
+- 「会議」「ミーティング」「mtg」「打ち合わせ」
 
-これらの「仕込み」は教育目的であり、実プロダクションの corpus 設計とは異なる方針です。
+これらは Part 2 で **BM25 + dense embedding の hybrid search + RRF** で効果が数値化されます。
+
+### 仕込み 2: ドキュメンテーション劣化 (Part 1 で爆発、Part 2 + Part 5 で回収)
+
+開発組織で本当にあるあるな課題:
+- **同じシステム (Stratus) の設計が複数版** で wiki に並ぶ (v3 確定版 / draft v1.2 / API 自動生成)
+- **古い文書と新しい文書が矛盾** している
+- **更新日が信頼できない** (Pegasus は作成日が消失)
+- **承認前ドラフトと本番設計が並列に存在**
+
+Part 1 ではこれを「**LLM が矛盾を見抜けず、古い設計をそのまま結論として返す**」失敗パターンとして体感します。
+
+Part 2 では metadata 保持型 chunking で版情報を文書に残し、Part 5 では freshness filter + index 更新タイミング設計で運用面から解決します。
+
+### 仕込み 3: 文体類似 trap (Part 2-3 reranker 効く)
+
+「お絵描き同好会の振り返り」は **業務文書と全く同じ構造** (TL;DR / やったこと / 振り返り / Next Action) で書かれています。embedding は内容ではなく構文・文体を強く拾うため[^embedding-surface-bias]、振り返り構文のクエリで意図せず混入します。
+
+Part 2-3 で cross-encoder reranker を 2 段目に挟むことで、表層類似ではなく内容関連性で再採点できることを示します。
+
+### 仕込み 4: cross-reference (Part 3 引用設計に布石)
+
+ほぼすべての文書に `See also: xxx.md` 形式のリンクを置いてあります。Part 3 で「正しい引用付き RAG」を実装するとき、これらの参照関係を grounding に使えます。
+
+---
+
+これらの「仕込み」は **教育目的** であり、実プロダクションの corpus 設計とは異なる方針です。実運用では:
+- ドキュメント版数管理は metadata で明示すべき
+- 古い文書は archive 化して index から除外すべき
+- post-mortem は「ある時点のスナップショット」と明示すべき
+
+— といったベストプラクティスがあります。Part 5「本番運用」でこれらを扱います。
+
+[^embedding-surface-bias]: Reimers & Gurevych, "Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks" (EMNLP 2019) で議論される、sentence embedding の表層構文への bias。
