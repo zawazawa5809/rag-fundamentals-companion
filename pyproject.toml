@@ -1,0 +1,35 @@
+[project]
+name = "rag-fundamentals-companion"
+version = "0.1.0"
+description = "Companion code for the ZeroZawa series 「今更聞けない RAG の作り方、評価の仕方」"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "zawa", email = "kakizsawa5809@gmail.com" }]
+keywords = ["rag", "retrieval-augmented-generation", "evaluation", "anthropic", "openai"]
+
+dependencies = [
+  "anthropic>=0.40.0",
+  "openai>=1.50.0",
+  "sentence-transformers>=3.0.0",
+  "rank-bm25>=0.2.2",
+  "python-dotenv>=1.0.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0.0",
+  "ruff>=0.6.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"

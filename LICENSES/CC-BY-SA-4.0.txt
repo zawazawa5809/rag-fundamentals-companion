@@ -1,0 +1,10 @@
+Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)
+
+Full text: https://creativecommons.org/licenses/by-sa/4.0/legalcode
+
+This license applies ONLY to:
+  - squad_subset.jsonl
+  - scripts/build_squad_subset.py
+
+These files are a derivative of SQuAD v1.1 by Rajpurkar et al. (CC BY-SA 4.0).
+See NOTICE for full attribution.

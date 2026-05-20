@@ -1,0 +1,41 @@
+name: smoke-tag
+
+on:
+  push:
+    tags:
+      - "part-*"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.11.11"
+          enable-cache: true
+
+      - name: Pin Python via uv
+        run: uv python install 3.11
+
+      - name: Sync dependencies (frozen)
+        run: uv sync --frozen
+
+      - name: Resolve part code from tag
+        id: meta
+        run: |
+          PART="${GITHUB_REF_NAME#part-}"
+          echo "part=$PART" >> "$GITHUB_OUTPUT"
+          echo "Resolved part=$PART from tag $GITHUB_REF_NAME"
+
+      - name: Smoke test (mock mode, no API keys needed)
+        env:
+          RAG_MOCK: "1"
+        run: uv run python scripts/smoke_part.py --part "${{ steps.meta.outputs.part }}" --mock

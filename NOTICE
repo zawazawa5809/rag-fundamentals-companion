@@ -1,0 +1,27 @@
+rag-fundamentals-companion
+==========================
+
+This project bundles or re-derives data from third-party sources. The
+relevant attributions are listed below. Code in this repository is licensed
+under MIT (see LICENSE).
+
+SQuAD v1.1 (CC BY-SA 4.0)
+-------------------------
+
+Files derived from SQuAD v1.1:
+  - squad_subset.jsonl
+  - scripts/build_squad_subset.py
+
+Attribution:
+  This product includes data from SQuAD v1.1 by Rajpurkar et al.,
+  available at https://rajpurkar.github.io/SQuAD-explorer/, licensed
+  under Creative Commons Attribution-ShareAlike 4.0 International.
+  See LICENSES/CC-BY-SA-4.0.txt for full license terms.
+
+corpus/** (CC0 1.0)
+-------------------
+
+All files under `corpus/` are fictional documents created for this series
+and released to the public domain under CC0 1.0. They do not include any
+third-party copyrighted material. See LICENSES/CC0-1.0.txt for license
+text.
