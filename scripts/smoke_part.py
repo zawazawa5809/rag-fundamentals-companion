@@ -18,8 +18,8 @@ import sys
 # part code (zero-padded) -> python module
 MAPPING: dict[str, str] = {
     "01": "examples.naive_rag",
-    # "02": "examples.retrieval.run",   # added in Part 2
-    # "03": "examples.generation.run",  # added in Part 3
+    "02": "examples.retrieval.run",
+    "03": "examples.generation.run",
     # "04": "examples.evaluate",        # added in Part 4
     # "05": "examples.ops.run",         # added in Part 5
 }
