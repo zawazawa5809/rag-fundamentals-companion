@@ -37,6 +37,41 @@ uv sync --frozen
 uv run python scripts/smoke_part.py --part 01 --mock
 ```
 
+## 0 円で動かしたいとき (Ollama + Qwen3)
+
+API キーを取らずに全 Part を再現したい読者向けに、Ollama (ローカル LLM ランタイム) + Qwen3 ファミリーを公式サポートしています。詳細は [zerozawa の ADR 0003](https://github.com/zawazawa5809/zerozawa/blob/main/docs/decisions/0003-ollama-free-alternative-stack.md) を参照。
+
+```bash
+# 1. Ollama を入れる (macOS なら brew install ollama)
+brew install ollama
+ollama serve &      # daemon を起動 (常駐させる場合は `brew services start ollama`)
+
+# 2. モデルを pull (合計 ~6 GB / 約 5 分。16 GB Mac を想定)
+ollama pull qwen3:8b               # 生成 (Apache 2.0、100+ 言語)
+ollama pull qwen3-embedding:0.6b   # 埋め込み (MTEB multilingual #1 系列の軽量版)
+
+# 3. .env で provider を切替
+echo 'RAG_PROVIDER=ollama' >> .env
+
+# 4. あとは同じ
+uv run python -m examples.naive_rag
+uv run python -m examples.generation.run
+uv run python -m examples.evaluate    # Part 4 RAGAs (judge も Ollama に流れる)
+```
+
+メモリ余力に合わせた tier:
+
+| RAM | 生成 | 埋め込み | 判定 (Part 4) |
+| --- | ---- | -------- | ------------- |
+| **16 GB Mac (推奨)** | `qwen3:8b` | `qwen3-embedding:0.6b` | `qwen3:8b` (共用) |
+| 32 GB+ | `qwen3:8b` | `qwen3-embedding:4b` | `qwen3:14b` (別ロードで self-preference 緩和) |
+| 8 GB | `qwen3:4b` | `qwen3-embedding:0.6b` | `qwen3:4b` (共用) |
+
+トレードオフ:
+
+- Part 3 で扱う Anthropic Citations API は Anthropic 固有のため、Ollama 経路では構造的に再現できません (代わりに prompt-engineering 風 citation で代替)。記事本文の主張は Anthropic 経路で読み、Ollama 経路は「構造を体感する」用途に位置付けてください
+- Part 4 で judge と generator が同一モデルになると self-preference バイアスが乗ります。記事 §「LLM-as-judge の良いところ・悪いところ」§「同型バイアス」がそのまま該当しますので、Ollama 経路で動かすと当該バイアスを **読者自身が実機で体感** できます
+
 ## Series articles (back-link)
 
 - ハブ: <https://zerozawa.pages.dev/series/rag-fundamentals>
@@ -46,10 +81,12 @@ uv run python scripts/smoke_part.py --part 01 --mock
 ## Tech stack
 
 - Python 3.11+ / [uv](https://docs.astral.sh/uv/) (lockfile commit 済)
-- LLM: [Anthropic Claude](https://www.anthropic.com/) (`anthropic` SDK)
-- Embedding: [OpenAI text-embedding-3-small](https://platform.openai.com/docs/guides/embeddings)
+- LLM (default): [Anthropic Claude](https://www.anthropic.com/) (`anthropic` SDK)
+- Embedding (default): [OpenAI text-embedding-3-small](https://platform.openai.com/docs/guides/embeddings)
+- LLM/Embedding (free 代替): [Ollama](https://ollama.com/) + Qwen3 (`qwen3:8b` + `qwen3-embedding:0.6b`) — ADR 0003 参照
 - BM25: [`rank-bm25`](https://github.com/dorianbrown/rank_bm25)
 - Cross-encoder rerank: [`sentence-transformers`](https://www.sbert.net/)
+- Eval (Part 4): [Ragas](https://docs.ragas.io/) 0.4 系 collections API
 - (Optional) [Cohere Rerank API](https://docs.cohere.com/docs/rerank) for Part 3 比較
 
 ## Repository status
