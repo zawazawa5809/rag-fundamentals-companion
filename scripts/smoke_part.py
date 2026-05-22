@@ -20,8 +20,8 @@ MAPPING: dict[str, str] = {
     "01": "examples.naive_rag",
     "02": "examples.retrieval.run",
     "03": "examples.generation.run",
-    # "04": "examples.evaluate",        # added in Part 4
-    # "05": "examples.ops.run",         # added in Part 5
+    "04": "examples.evaluate",
+    "05": "examples.ops.run",
 }
 
 

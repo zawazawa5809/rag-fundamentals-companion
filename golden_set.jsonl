@@ -1,0 +1,30 @@
+{"qid":"H01","query":"テレワーク手当はいくら？","reference":"在宅勤務手当は月額 8,000 円が支給される。","relevant_docs":["haruna-remote-work"],"category":"happy"}
+{"qid":"H02","query":"経費精算の上限はいくらまで？","reference":"通常経費は月 50,000 円、出張は事前申請で 200,000 円が上限。","relevant_docs":["haruna-expense"],"category":"happy"}
+{"qid":"H03","query":"Sev1 のときの初動 SLA は？","reference":"Sev1 は 5 分以内 acknowledge、30 分以内に顧客連絡開始。","relevant_docs":["haruna-incident-flow"],"category":"happy"}
+{"qid":"H04","query":"Sev2 と Sev3 の違いは？","reference":"Sev2 は部分劣化で回避策あり、Sev3 は UI bug などで翌営業日対応。","relevant_docs":["haruna-incident-flow"],"category":"happy"}
+{"qid":"H05","query":"VPN が繋がらないときの問い合わせ先は？","reference":"社内 IT サポート (#help-it Slack チャンネル) に連絡する。","relevant_docs":["haruna-faq-helpdesk"],"category":"happy"}
+{"qid":"H06","query":"Stratus の全体アーキテクチャは？","reference":"Stratus v3 は Ingestion / Processing / Auth / API の 4 サービスから成る。","relevant_docs":["stratus-architecture-v3"],"category":"happy"}
+{"qid":"H07","query":"Stratus の認証は現行どう動いている？","reference":"Auth Service は独立 microservice として token 検証を担当する (v3)。","relevant_docs":["stratus-architecture-v3"],"category":"happy"}
+{"qid":"H08","query":"Stratus API のエラーコードは？","reference":"4xx は client error、5xx は server error。401 は token 期限切れ。","relevant_docs":["stratus-api-reference"],"category":"happy"}
+{"qid":"H09","query":"Pegasus の主要テーブルは？","reference":"users / orders / inventory / audit_log の 4 テーブルが中核。","relevant_docs":["pegasus-er-diagram"],"category":"happy"}
+{"qid":"H10","query":"2024-06 の Stratus Auth 障害の原因は？","reference":"DB connection pool 枯渇が直接原因。connection leak が hot path に残っていた。","relevant_docs":["stratus-postmortem-2024-06"],"category":"happy"}
+{"qid":"H11","query":"出社頻度の最低基準は？","reference":"原則 週 1 回以上の出社が推奨されている。","relevant_docs":["haruna-remote-work"],"category":"happy"}
+{"qid":"H12","query":"領収書を紛失したらどうする？","reference":"500 円未満は社内システムで自己申告、500 円以上は経理部相談。","relevant_docs":["haruna-expense"],"category":"happy"}
+{"qid":"H13","query":"PagerDuty で acknowledge する時間は？","reference":"Sev1 は 5 分以内に acknowledge する。","relevant_docs":["haruna-incident-flow"],"category":"happy"}
+{"qid":"H14","query":"パスワードリセットの手順は？","reference":"社内ヘルプデスク FAQ の手順に従い、Slack で IT サポートに DM する。","relevant_docs":["haruna-faq-helpdesk"],"category":"happy"}
+{"qid":"H15","query":"Stratus Ingestion Service の役割は？","reference":"外部データを取り込んで Processing に渡す責務を持つ。","relevant_docs":["stratus-architecture-v3"],"category":"happy"}
+{"qid":"H16","query":"Stratus REST API の base URL は？","reference":"API リファレンスに記載の Stratus 標準エンドポイント。","relevant_docs":["stratus-api-reference"],"category":"happy"}
+{"qid":"H17","query":"Pegasus の audit_log テーブルは何を記録する？","reference":"ユーザ操作と権限変更の履歴を時系列で保存する。","relevant_docs":["pegasus-er-diagram"],"category":"happy"}
+{"qid":"H18","query":"Stratus Auth 障害の再発防止策は？","reference":"connection pool 監視と leak 検出 lint を CI に追加。","relevant_docs":["stratus-postmortem-2024-06"],"category":"happy"}
+{"qid":"A01","query":"在宅勤務するときに必要な手当と申請手順は？","reference":"月額 8,000 円が在宅勤務手当として支給される。経理経由で月次申請。","relevant_docs":["haruna-remote-work","haruna-expense"],"category":"ambiguous"}
+{"qid":"A02","query":"Sev1 障害で顧客連絡に必要な情報は？","reference":"インシデント概要・影響範囲・初動 ETA を 30 分以内に CS lead 経由で連絡。","relevant_docs":["haruna-incident-flow","haruna-faq-helpdesk"],"category":"ambiguous"}
+{"qid":"A03","query":"Stratus の認証で発行される token の有効期限は？","reference":"v3 の Auth は token 検証を担当するが、有効期限の正確値は API リファレンスに分散して記載。","relevant_docs":["stratus-architecture-v3","stratus-api-reference"],"category":"ambiguous"}
+{"qid":"A04","query":"Stratus 5.0 のマイクロサービス境界はどう変わる？","reference":"未確定 (draft v1.2、未承認のため運用判断には使えない)。","relevant_docs":["stratus-microservice-boundaries-draft"],"category":"ambiguous"}
+{"qid":"A05","query":"経費精算は会計年度をまたいで申請できる？","reference":"翌月 10 日までが期限。年度跨ぎは経理部と個別調整。","relevant_docs":["haruna-expense","haruna-faq-helpdesk"],"category":"ambiguous"}
+{"qid":"A06","query":"インシデント時の Slack の動かし方は？","reference":"#incident-active に thread を立て、関係者を mention で巻き込む。","relevant_docs":["haruna-incident-flow","haruna-faq-helpdesk"],"category":"ambiguous"}
+{"qid":"N01","query":"2030 年の中期経営計画の売上目標は？","reference":"提供された資料からは判断できません。","relevant_docs":[],"category":"negative"}
+{"qid":"N02","query":"創業者の出身大学は？","reference":"提供された資料からは判断できません。","relevant_docs":[],"category":"negative"}
+{"qid":"N03","query":"次期 CEO の名前は？","reference":"提供された資料からは判断できません。","relevant_docs":[],"category":"negative"}
+{"qid":"T01","query":"障害対応のエスカレーション基準を教えてください","reference":"Sev レベルごとに初動 SLA とエスカレーション先が定義されている (Sev1 は oncall + SRE + CS lead)。","relevant_docs":["haruna-incident-flow"],"category":"trap","note":"hb-club-painting Next Action 構造が trap"}
+{"qid":"T02","query":"次回開催の案内方法は？","reference":"提供された資料からは判断できません (※ お絵描き同好会 doc が部分的に該当するが社内全体の案内方法は corpus にない)。","relevant_docs":[],"category":"trap"}
+{"qid":"T03","query":"Stratus の最新マイクロサービス構成は？","reference":"v3 が現行確定版。5.0 は draft のため運用利用不可。","relevant_docs":["stratus-architecture-v3"],"category":"trap","note":"draft doc を引かないか確認"}

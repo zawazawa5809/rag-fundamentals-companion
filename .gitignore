@@ -32,3 +32,6 @@ scratch/
 # Build artifacts (none expected, but defensive)
 build/
 dist/
+
+# Runtime artifacts from examples
+eval_report.json
