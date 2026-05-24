@@ -19,33 +19,33 @@ import argparse
 import sys
 from pathlib import Path
 
-from clients import get_clients
+from clients import get_clients, get_corpus_dir
 
 from examples.retrieval.chunker import ChunkNode, chunk_corpus
 from examples.retrieval.embedder import dense_rank, embed_corpus
 from examples.retrieval.hybrid import apply_status_filter, bm25_rank, build_bm25, rrf_fuse
 
-CORPUS_DIR = Path(__file__).resolve().parents[2] / "corpus"
+CORPUS_DIR = get_corpus_dir()
 TOP_K = 5
 
 GOLDEN = [
     {
         "qid": "Q1",
-        "query": "Stratus の認証は現行どう動いている？",
-        "relevant_docs": {"stratus-architecture-v3", "stratus-postmortem-2024-06"},
-        "note": "現行 (v3) の Auth Service 設計と、過去 post-mortem の Auth 言及。draft は未承認のため非 relevant",
+        "query": "Mirage 現行アーキテクチャの認証経路は？",
+        "relevant_docs": {"mirage-architecture-v3"},
+        "note": "現行 v3 の OIDC + Keycloak。stale trap (v2-archive の BASIC + JWT) は status filter で除外されることを示す",
     },
     {
         "qid": "Q2",
         "query": "テレワーク手当はいくら？",
-        "relevant_docs": {"haruna-remote-work"},
-        "note": "corpus は「リモートワーク」「在宅勤務」表記。query 側「テレワーク」は corpus 未収語 — dense の意味類似 + BM25 の手当表層で hybrid 効果が見える",
+        "relevant_docs": {"nagisa-remote-work"},
+        "note": "corpus は「リモートワーク」「在宅勤務」表記、query 側「テレワーク」は別表記 — dense の意味類似 + BM25 の手当表層で hybrid 効果が見える",
     },
     {
         "qid": "Q3",
-        "query": "障害対応のエスカレーション基準を教えてください",
-        "relevant_docs": {"haruna-incident-flow"},
-        "note": "trap (お絵描き同好会の Next Action 構造) を hybrid で押し出せるか",
+        "query": "P1 障害時の初動 SLA は？",
+        "relevant_docs": {"nagisa-incident-flow"},
+        "note": "trap (nagisa-boardgame-monthly の post-mortem 構造類似) を hybrid で押し出せるか",
     },
 ]
 
@@ -76,12 +76,14 @@ def part2_hybrid(
 ) -> list[ChunkNode]:
     dense = dense_rank(embed_client, query, chunk_matrix)
     sparse = bm25_rank(query, bm25)
-    # Fuse the full ranking, then filter, then slice — otherwise draft chunks
-    # in the head can starve the top-K of active candidates.
+    # Fuse the full ranking, then filter, then slice — otherwise non-current
+    # chunks in the head can starve the top-K of active candidates. The status
+    # filter drops both unapproved `draft` docs and superseded `archived` ones
+    # (Part 2's "部分解決" of the stale trap; Part 5 adds date-based freshness).
     fused = rrf_fuse([dense, sparse], k=60, top_k=len(chunks))
     if filter_draft:
         meta = [c.metadata for c in chunks]
-        fused = apply_status_filter(fused, meta, exclude={"draft"})
+        fused = apply_status_filter(fused, meta, exclude={"draft", "archived"})
     return [chunks[i] for i in fused[:TOP_K]]
 
 

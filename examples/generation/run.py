@@ -31,7 +31,7 @@ SRC_PATH = REPO_ROOT / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from clients import get_clients  # noqa: E402
+from clients import get_clients, get_corpus_dir  # noqa: E402
 
 from examples.retrieval.chunker import ChunkNode, chunk_corpus  # noqa: E402
 from examples.retrieval.embedder import dense_rank, embed_corpus  # noqa: E402
@@ -44,12 +44,12 @@ from examples.retrieval.hybrid import (  # noqa: E402
 from rag.prompt_builder import CitedChunk, build_messages  # noqa: E402
 from rag.reranker import get_reranker  # noqa: E402
 
-CORPUS_DIR = REPO_ROOT / "corpus"
+CORPUS_DIR = get_corpus_dir()
 RECALL_K = 20  # hybrid top-k fed into reranker
 RERANK_K = 3  # final top-k surfaced to Citations API
-DEFAULT_QUERY = "障害対応のエスカレーション基準を教えてください"
+DEFAULT_QUERY = "Mirage 開発でコードレビューに必要な approve 数は？"
 DEFAULT_MODEL = "claude-opus-4-7"
-TRAP_DOC = "haruna-club-painting"  # Q3 trap from Part 2
+TRAP_DOC = "nagisa-lt-evaluation"  # H15 semantic trap (LT 評価基準 vs コードレビュー基準)
 
 
 @dataclass
@@ -91,7 +91,7 @@ def hybrid_top_k(
     fused = rrf_fuse([dense, sparse], k=60, top_k=len(chunks))
     if filter_draft:
         meta = [c.metadata for c in chunks]
-        fused = apply_status_filter(fused, meta, exclude={"draft"})
+        fused = apply_status_filter(fused, meta, exclude={"draft", "archived"})
     return [chunks[i] for i in fused[:top_k]]
 
 

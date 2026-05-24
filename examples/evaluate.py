@@ -11,12 +11,21 @@ Pipelines:
   P3 +rerank+citations — Part 3 cross-encoder top-3 + Anthropic Citations API
 
 Modes:
-  --mock                no API calls; placeholder scores derived from a
-                        deterministic hash so smoke-tag CI passes
-  (no flag, .env set)   real RAGAs eval. judge = openai gpt-4o-mini
+  --mock                       no API calls; placeholder scores derived from a
+                               deterministic hash so smoke-tag CI passes
+  (no flag, RAG_PROVIDER=...)  real RAGAs eval.
+                               - anthropic_openai (default) → judge = openai gpt-4o-mini
+                               - ollama                     → judge = qwen3:8b via Ollama
+                                                              (ADR 0003; absolute scores
+                                                              shift due to self-preference
+                                                              bias when judge == generator)
+
+Sub-smoke gating:
+  --limit N             evaluate the first N entries only (default: all 30)
+  --pipelines CODES     comma-separated subset (p1,p2,p3). Default: all three.
 
 Output:
-  - stdout: per-pipeline averages
+  - stdout: per-pipeline averages, labelled with the resolved judge
   - eval_report.json: full per-query scores
 """
 
@@ -36,7 +45,16 @@ SRC_PATH = REPO_ROOT / "src"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
-from clients import get_clients  # noqa: E402
+from clients import (  # noqa: E402
+    Provider,
+    _resolve_ollama_models,
+    _resolve_ollama_openai_base_url,
+    _resolve_provider,
+    get_clients,
+    get_corpus_dir,
+    get_eval_report_path,
+    get_golden_set_path,
+)
 
 from examples.retrieval.chunker import ChunkNode, chunk_corpus  # noqa: E402
 from examples.retrieval.embedder import dense_rank, embed_corpus  # noqa: E402
@@ -49,9 +67,9 @@ from examples.retrieval.hybrid import (  # noqa: E402
 from rag.prompt_builder import CitedChunk, build_messages  # noqa: E402
 from rag.reranker import get_reranker  # noqa: E402
 
-CORPUS_DIR = REPO_ROOT / "corpus"
-GOLDEN_PATH = REPO_ROOT / "golden_set.jsonl"
-REPORT_PATH = REPO_ROOT / "eval_report.json"
+CORPUS_DIR = get_corpus_dir()
+GOLDEN_PATH = get_golden_set_path()
+REPORT_PATH = get_eval_report_path()
 HYBRID_K = 20
 TOP_K = 3
 METRICS = ["faithfulness", "answer_relevance", "context_precision", "context_recall"]
@@ -79,12 +97,17 @@ class PipelineAnswer:
 
 @dataclass
 class Scores:
-    """4-metric scores for one (pipeline, query)."""
+    """4-metric scores for one (pipeline, query).
 
-    faithfulness: float = 0.0
-    answer_relevance: float = 0.0
-    context_precision: float = 0.0
-    context_recall: float = 0.0
+    A metric is `None` when its scorer call failed (e.g. the judge degenerated
+    and produced unparseable JSON). `None` metrics are excluded from averages
+    rather than counted as zero, so a rare failure does not skew the chart.
+    """
+
+    faithfulness: float | None = None
+    answer_relevance: float | None = None
+    context_precision: float | None = None
+    context_recall: float | None = None
 
 
 @dataclass
@@ -93,20 +116,23 @@ class PipelineReport:
     per_query: dict[str, Scores] = field(default_factory=dict)
 
     def averages(self) -> Scores:
-        if not self.per_query:
-            return Scores()
-        n = len(self.per_query)
+        """Mean of each metric over the queries that scored it (skips None)."""
         agg = Scores()
-        for s in self.per_query.values():
-            agg.faithfulness += s.faithfulness
-            agg.answer_relevance += s.answer_relevance
-            agg.context_precision += s.context_precision
-            agg.context_recall += s.context_recall
-        agg.faithfulness /= n
-        agg.answer_relevance /= n
-        agg.context_precision /= n
-        agg.context_recall /= n
+        for metric in ("faithfulness", "answer_relevance", "context_precision", "context_recall"):
+            vals = [
+                v for s in self.per_query.values() if (v := getattr(s, metric)) is not None
+            ]
+            setattr(agg, metric, sum(vals) / len(vals) if vals else 0.0)
         return agg
+
+    def failure_count(self) -> int:
+        """How many (query, metric) cells failed to score (are None)."""
+        return sum(
+            1
+            for s in self.per_query.values()
+            for metric in ("faithfulness", "answer_relevance", "context_precision", "context_recall")
+            if getattr(s, metric) is None
+        )
 
 
 # ---------------------------- pipelines -------------------------------------
@@ -131,8 +157,8 @@ def load_golden() -> list[GoldenEntry]:
     return rows
 
 
-def _index(mock: bool | None):
-    clients = get_clients(mock=mock)
+def _index(mock: bool | None, provider: Provider | None = None):
+    clients = get_clients(mock=mock, provider=provider)
     chunks = chunk_corpus(CORPUS_DIR)
     pairs = [(c.chunk_id, c.text) for c in chunks]
     matrix = embed_corpus(clients.embed, pairs)
@@ -155,7 +181,7 @@ def pipeline_hybrid(query: str, chunks, matrix, bm25, embed_client) -> PipelineA
     sparse = bm25_rank(query, bm25)
     fused = rrf_fuse([dense, sparse], k=60, top_k=len(chunks))
     meta = [c.metadata for c in chunks]
-    fused = apply_status_filter(fused, meta, exclude={"draft"})
+    fused = apply_status_filter(fused, meta, exclude={"draft", "archived"})
     picks = [chunks[i] for i in fused[:TOP_K]]
     return _answer_from(picks, query)
 
@@ -165,7 +191,7 @@ def pipeline_rerank(query: str, chunks, matrix, bm25, embed_client, reranker) ->
     sparse = bm25_rank(query, bm25)
     fused = rrf_fuse([dense, sparse], k=60, top_k=len(chunks))
     meta = [c.metadata for c in chunks]
-    fused = apply_status_filter(fused, meta, exclude={"draft"})
+    fused = apply_status_filter(fused, meta, exclude={"draft", "archived"})
     candidates = [chunks[i] for i in fused[:HYBRID_K]]
     pairs = [(c.chunk_id, c.text) for c in candidates]
     ranking = reranker.rerank(query, pairs, top_k=TOP_K)
@@ -215,31 +241,58 @@ async def _score_real(
 
     `ragas_scorers` is constructed by `_build_real_scorers`. Each scorer's
     `ascore` takes a different signature; we pass only the args it needs.
+
+    Each metric is scored independently and guarded: if a scorer raises (most
+    often the local judge degenerating into a token-repetition loop and
+    overrunning max_tokens), that single metric is recorded as `None` and the
+    run continues, instead of losing every already-scored entry to one bad call.
     """
+
+    async def _safe(name: str, factory):  # type: ignore[no-untyped-def]
+        try:
+            r = await factory()
+            return float(getattr(r, "value", r))
+        except Exception as e:  # noqa: BLE001 — any judge failure → skip this metric
+            print(f"  [warn] {name} failed for {entry.qid}: {type(e).__name__}", file=sys.stderr)
+            return None
+
     out = Scores()
-    f = await ragas_scorers["faithfulness"].ascore(
-        user_input=entry.query, response=ans.text, retrieved_contexts=ans.contexts
+    out.faithfulness = await _safe(
+        "faithfulness",
+        lambda: ragas_scorers["faithfulness"].ascore(
+            user_input=entry.query, response=ans.text, retrieved_contexts=ans.contexts
+        ),
     )
-    a = await ragas_scorers["answer_relevance"].ascore(
-        user_input=entry.query, response=ans.text
+    out.answer_relevance = await _safe(
+        "answer_relevance",
+        lambda: ragas_scorers["answer_relevance"].ascore(
+            user_input=entry.query, response=ans.text
+        ),
     )
-    cp = await ragas_scorers["context_precision"].ascore(
-        user_input=entry.query, reference=entry.reference, retrieved_contexts=ans.contexts
+    out.context_precision = await _safe(
+        "context_precision",
+        lambda: ragas_scorers["context_precision"].ascore(
+            user_input=entry.query, reference=entry.reference, retrieved_contexts=ans.contexts
+        ),
     )
-    cr = await ragas_scorers["context_recall"].ascore(
-        user_input=entry.query, retrieved_contexts=ans.contexts, reference=entry.reference
+    out.context_recall = await _safe(
+        "context_recall",
+        lambda: ragas_scorers["context_recall"].ascore(
+            user_input=entry.query, retrieved_contexts=ans.contexts, reference=entry.reference
+        ),
     )
-    out.faithfulness = float(getattr(f, "value", f))
-    out.answer_relevance = float(getattr(a, "value", a))
-    out.context_precision = float(getattr(cp, "value", cp))
-    out.context_recall = float(getattr(cr, "value", cr))
     return out
 
 
-def _build_real_scorers():
-    """Build RAGAs collections-API scorers backed by openai gpt-4o-mini.
+def _build_real_scorers(provider: Provider):
+    """Build RAGAs collections-API scorers for the resolved provider.
 
     Imports are deferred so --mock works without the ragas / openai stack.
+
+    - anthropic_openai (default): OpenAI gpt-4o-mini judge + text-embedding-3-small
+    - ollama: AsyncOpenAI with base_url pointing at Ollama's OpenAI-compatible
+      endpoint, qwen3:8b judge (configurable via OLLAMA_JUDGE_MODEL) and
+      qwen3-embedding:0.6b. See ADR 0003 for the model selection rationale.
     """
     from openai import AsyncOpenAI
     from ragas.embeddings.base import embedding_factory
@@ -251,9 +304,58 @@ def _build_real_scorers():
         Faithfulness,
     )
 
-    client = AsyncOpenAI()
-    llm = llm_factory("gpt-4o-mini", client=client)
-    embeddings = embedding_factory("openai", model="text-embedding-3-small", client=client)
+    if provider == "ollama":
+        base_url = _resolve_ollama_openai_base_url()
+        models = _resolve_ollama_models()
+        # OpenAI SDK rejects empty api_key, so pass a sentinel; Ollama does not
+        # verify it. OLLAMA_API_KEY env is supported for forward compat.
+        client = AsyncOpenAI(
+            base_url=base_url,
+            api_key=os.getenv("OLLAMA_API_KEY", "ollama"),
+        )
+        # Qwen3 is a hybrid-thinking model: by default it emits chain-of-thought
+        # into a separate `reasoning` field, leaving `content` empty until the
+        # (variable-length) thinking finishes. Instructor parses `content`, so
+        # under RAGAs' structured-output prompts the thinking can consume the
+        # whole token budget, retries grow max_tokens, and the call still fails
+        # with an empty schema. We therefore disable thinking at the source.
+        #
+        # Empirically (Ollama 0.24, qwen3:8b, /v1/chat/completions) only the
+        # OpenAI-standard `reasoning_effort: "none"` actually suppresses the
+        # `reasoning` field — `/no_think` prompt tokens, the top-level
+        # `think: false` flag, and `chat_template_kwargs.enable_thinking=False`
+        # are all silently ignored by the OpenAI-compat layer. With thinking
+        # off, `content` is populated immediately and instructor parses on the
+        # first try. See ADR 0004 Open Questions on the Qwen3 reasoning leak.
+        _original_create = client.chat.completions.create
+
+        async def _no_think_create(**kwargs):  # type: ignore[no-untyped-def]
+            kwargs.setdefault("reasoning_effort", "none")
+            # With thinking off, `content` is pure JSON — but RAGAs' Faithfulness
+            # decomposes the answer into a verdict list, so the default
+            # 1024-token budget truncates it (finish_reason="length") and
+            # instructor's geometric retry never catches up. Floor max_tokens so
+            # the structured output completes on the first attempt; 4096 is ample
+            # for the longest legitimate statement list while capping the waste
+            # when a generation degenerates (see below).
+            kwargs["max_tokens"] = max(int(kwargs.get("max_tokens") or 0), 4096)
+            # qwen3:8b occasionally falls into a token-repetition death spiral
+            # (e.g. "当社の当社の当社の…") that fills the whole budget with garbage
+            # and produces unparseable JSON. A modest frequency_penalty breaks the
+            # loop without distorting valid structured output (verified: identical
+            # parse on normal prompts). The per-metric guard in `_score_real` is
+            # the safety net for any residual degeneration.
+            kwargs.setdefault("frequency_penalty", 0.3)
+            return await _original_create(**kwargs)
+
+        client.chat.completions.create = _no_think_create  # type: ignore[assignment]
+        # temperature=0 for deterministic JSON output
+        llm = llm_factory(models["judge"], client=client, temperature=0)
+        embeddings = embedding_factory("openai", model=models["embed"], client=client)
+    else:
+        client = AsyncOpenAI()
+        llm = llm_factory("gpt-4o-mini", client=client)
+        embeddings = embedding_factory("openai", model="text-embedding-3-small", client=client)
     return {
         "faithfulness": Faithfulness(llm=llm),
         "answer_relevance": AnswerRelevancy(llm=llm, embeddings=embeddings),
@@ -265,21 +367,43 @@ def _build_real_scorers():
 # ---------------------------- driver ----------------------------------------
 
 
-async def _evaluate(mock: bool) -> int:
-    clients, chunks, matrix, bm25 = _index(True if mock else None)
+def _judge_label(mock: bool, provider: Provider) -> str:
+    if mock:
+        return "mock"
+    if provider == "ollama":
+        return f"ollama {_resolve_ollama_models()['judge']}"
+    return "openai gpt-4o-mini"
+
+
+async def _evaluate(
+    mock: bool,
+    provider: Provider,
+    limit: int | None = None,
+    pipelines_filter: list[str] | None = None,
+) -> int:
+    clients, chunks, matrix, bm25 = _index(True if mock else None, provider=provider)
     reranker = get_reranker(mock=True if mock else None)
 
     golden = load_golden()
+    if limit is not None:
+        golden = golden[:limit]
     print(f"[golden] {len(golden)} entries loaded from {GOLDEN_PATH.name}")
 
-    pipelines = {
+    all_pipelines = {
         "p1": ("naive (Part 1)", lambda q: pipeline_naive(q, chunks, matrix, clients.embed)),
         "p2": ("hybrid+filter (Part 2)", lambda q: pipeline_hybrid(q, chunks, matrix, bm25, clients.embed)),
         "p3": ("+rerank+citations (Part 3)", lambda q: pipeline_rerank(q, chunks, matrix, bm25, clients.embed, reranker)),
     }
+    if pipelines_filter is not None:
+        unknown = set(pipelines_filter) - all_pipelines.keys()
+        if unknown:
+            raise ValueError(f"Unknown pipeline codes: {sorted(unknown)}. Valid: p1, p2, p3")
+        pipelines = {k: all_pipelines[k] for k in pipelines_filter}
+    else:
+        pipelines = all_pipelines
 
     reports: dict[str, PipelineReport] = {k: PipelineReport(name=v[0]) for k, v in pipelines.items()}
-    scorers = None if mock else _build_real_scorers()
+    scorers = None if mock else _build_real_scorers(provider)
 
     for entry in golden:
         for code, (label, run) in pipelines.items():
@@ -297,7 +421,7 @@ async def _evaluate(mock: bool) -> int:
             reports[code].per_query[entry.qid] = s
         print(f"  scored {entry.qid} ({entry.category})")
 
-    print("\n[summary] (judge: " + ("mock" if mock else "openai gpt-4o-mini") + ")")
+    print(f"\n[summary] (judge: {_judge_label(mock, provider)})")
     header = f"  {'pipeline':<32} " + "  ".join(f"{m:<20}" for m in METRICS)
     print(header)
     for code, rep in reports.items():
@@ -309,10 +433,22 @@ async def _evaluate(mock: bool) -> int:
         row += f"{avg.context_recall:<20.4f}"
         print(row)
 
+    total_failures = sum(rep.failure_count() for rep in reports.values())
+    total_cells = sum(len(rep.per_query) * len(METRICS) for rep in reports.values())
+    if total_failures:
+        print(
+            f"\n[warn] {total_failures}/{total_cells} metric cells failed to score "
+            f"(excluded from averages; see [warn] lines above)."
+        )
+        for code, rep in reports.items():
+            if rep.failure_count():
+                print(f"  - {rep.name}: {rep.failure_count()} cell(s)")
+
     serializable = {
         code: {
             "name": rep.name,
             "averages": rep.averages().__dict__,
+            "failure_count": rep.failure_count(),
             "per_query": {qid: s.__dict__ for qid, s in rep.per_query.items()},
         }
         for code, rep in reports.items()
@@ -325,9 +461,30 @@ async def _evaluate(mock: bool) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Part 4 — RAGAs evaluation across Part 1/2/3 pipelines.")
     parser.add_argument("--mock", action="store_true", help="skip RAGAs (deterministic placeholder scores)")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="evaluate only the first N entries of the golden set (sub-smoke gating before full run)",
+    )
+    parser.add_argument(
+        "--pipelines",
+        default=None,
+        help="comma-separated subset of pipeline codes to evaluate (e.g. 'p3' or 'p1,p3'). Default: all three.",
+    )
     args = parser.parse_args()
+    if args.limit is not None and args.limit < 1:
+        parser.error("--limit must be a positive integer (>= 1)")
     mock = args.mock or os.getenv("RAG_MOCK", "").lower() in {"1", "true", "yes"}
-    return asyncio.run(_evaluate(mock=mock))
+    provider = _resolve_provider(None)
+    pipelines_filter = (
+        [code.strip() for code in args.pipelines.split(",") if code.strip()]
+        if args.pipelines
+        else None
+    )
+    return asyncio.run(
+        _evaluate(mock=mock, provider=provider, limit=args.limit, pipelines_filter=pipelines_filter)
+    )
 
 
 if __name__ == "__main__":

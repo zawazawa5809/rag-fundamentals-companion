@@ -10,9 +10,16 @@ Output node carries:
   - `text`       chunk body (header lines stripped on request)
   - `metadata`   {version, status, updated_at, owner, heading_path}
 
-`status` is heuristically set to `draft` when the document body contains a
-literal warning like 「承認されていない」「ドラフト」 inside a blockquote, and
-to `active` otherwise.
+`status` is heuristically set from blockquote markers:
+  - `draft`    — an unapproved working doc (「承認されていない」「ドラフト」)
+  - `archived` — a superseded old revision kept for reference, self-labelled
+                 「Archive 注記」/「archive されてい(る|ます)」 (e.g. the v2
+                 corpus' `*-archive.md` stale traps)
+  - `active`   — everything else
+
+The `archived` marker is matched on the self-label only, so a *current* doc
+that merely references an archive (e.g. mirage-architecture-v3 says 「v2 は …
+に archive 済」) stays `active`.
 
 This is intentionally a teaching implementation — production users should
 prefer `langchain_text_splitters.MarkdownHeaderTextSplitter` or LlamaIndex
@@ -34,6 +41,12 @@ _VERSION_RE = re.compile(r"version[:\s]*\**\s*((?:draft\s+)?v?[0-9][0-9a-zA-Z.]*
 _UPDATED_RE = re.compile(r"(?:最終更新|最終改訂|updated|更新日)[:\s]*\**\s*([0-9]{4}\s*年\s*[0-9]{1,2}\s*月\s*[0-9]{1,2}\s*日|[0-9]{4}-[0-9]{2}-[0-9]{2})")
 _OWNER_RE = re.compile(r"\(([^)]+部)\)|\(([^)]+チーム)\)|\(([^)]+ 幹事[^)]*)\)")
 _DRAFT_WORDS = ("承認されていない", "ドラフト", "draft v")
+# Self-labels that only appear in a superseded doc's own header — matched
+# case-insensitively against lowercased blockquotes, with katakana variants.
+# Deliberately NOT a bare "archive": a *current* doc that merely references one
+# (v3 says 「archive 済」) must stay active, so we require the self-label form
+# (注記 / されてい). The corpus test pins this to exactly two archived docs.
+_ARCHIVE_WORDS = ("archive 注記", "archive されてい", "アーカイブ注記", "アーカイブされてい")
 
 
 @dataclass
@@ -61,7 +74,13 @@ def _extract_metadata(body: str) -> dict:
     owner = None
     if m := _OWNER_RE.search(bq_blocks):
         owner = next((g for g in m.groups() if g), None)
-    status = "draft" if any(w in bq_blocks for w in _DRAFT_WORDS) else "active"
+    bq_lower = bq_blocks.lower()
+    if any(w in bq_blocks for w in _DRAFT_WORDS):
+        status = "draft"
+    elif any(w in bq_lower for w in _ARCHIVE_WORDS):
+        status = "archived"
+    else:
+        status = "active"
     return {"version": version, "status": status, "updated_at": updated, "owner": owner}
 
 
