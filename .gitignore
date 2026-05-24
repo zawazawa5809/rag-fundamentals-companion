@@ -35,3 +35,6 @@ dist/
 
 # Runtime artifacts from examples
 eval_report.json
+eval_report.v*.json
+eval_report.*.partial.json
+output/
