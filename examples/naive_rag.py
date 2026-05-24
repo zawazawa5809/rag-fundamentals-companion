@@ -21,9 +21,9 @@ from pathlib import Path
 
 import numpy as np
 
-from clients import get_clients
+from clients import get_clients, get_corpus_dir
 
-CORPUS_DIR = Path(__file__).resolve().parent.parent / "corpus"
+CORPUS_DIR = get_corpus_dir()
 CHUNK_SIZE = 600
 CHUNK_OVERLAP = 100
 TOP_K = 3

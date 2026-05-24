@@ -1,0 +1,8 @@
+{"qid": "H01", "query": "リモートワーク手当はいくら？", "relevant_docs": ["nagisa-remote-work"], "trap_docs": [], "category": "happy"}
+{"qid": "H02", "query": "経費精算の月次上限は？", "relevant_docs": ["nagisa-expense"], "trap_docs": ["nagisa-expense-2023-archive"], "category": "happy"}
+{"qid": "H03", "query": "Mirage 現行アーキテクチャの認証経路は？", "relevant_docs": ["mirage-architecture-v3"], "trap_docs": ["mirage-architecture-v2-archive"], "category": "happy"}
+{"qid": "H04", "query": "P1 障害時の初動 SLA は？", "relevant_docs": ["nagisa-incident-flow"], "trap_docs": ["nagisa-boardgame-monthly"], "category": "happy"}
+{"qid": "H05", "query": "Mirage P1 障害時のロールバック判断は？", "relevant_docs": ["nagisa-incident-flow", "mirage-architecture-v3"], "trap_docs": ["lumen-rollback-pallet"], "category": "happy"}
+{"qid": "S01", "query": "コードレビューの観点・採点基準は？", "relevant_docs": ["mirage-architecture-v3"], "trap_docs": ["nagisa-lt-evaluation"], "category": "sad"}
+{"qid": "S02", "query": "Project Lumen 今期リリース計画は？", "relevant_docs": [], "trap_docs": ["nagisa-running-club-plan"], "category": "sad"}
+{"qid": "E01", "query": "お菓子コーナーの支払い方法は？", "relevant_docs": ["nagisa-snack-policy"], "trap_docs": [], "category": "edge"}

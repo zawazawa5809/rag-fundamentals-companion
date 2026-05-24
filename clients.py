@@ -19,16 +19,50 @@ Resolution order for provider:
 
 Mock takes precedence over provider — if mock is enabled, the provider
 choice is ignored.
+
+Corpus version (ADR 0004):
+  - v1: ハルナ・テクノロジーズ corpus (10 docs, legacy)
+  - v2: ナギサ・パートナーズ corpus (15 docs, default; matches the rewritten
+        article narrative)
+  - selected via RAG_CORPUS_VERSION env var; defaults to v2.
 """
 
 from __future__ import annotations
 
 import os
+import sys
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from pathlib import Path
+from typing import Literal, Protocol, TypedDict
+from urllib.parse import urlparse, urlunparse
+
+# Load .env at import time so example scripts and tests can rely on env vars
+# (RAG_PROVIDER, OLLAMA_*, OPENAI_API_KEY, ANTHROPIC_API_KEY, …) without each
+# script having to call load_dotenv() itself. Existing env vars are preserved
+# (override=False), so CI and explicit `RAG_PROVIDER=… uv run …` still win.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(override=False)
+except ImportError:
+    pass
 
 Provider = Literal["anthropic_openai", "ollama"]
 DEFAULT_PROVIDER: Provider = "anthropic_openai"
+
+_OLLAMA_DEFAULT_HOST = "http://localhost:11434"
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+CorpusVersion = Literal["v1", "v2"]
+DEFAULT_CORPUS_VERSION: CorpusVersion = "v2"
+_VALID_CORPUS_VERSIONS: frozenset[str] = frozenset({"v1", "v2"})
+_REPO_ROOT = Path(__file__).resolve().parent
+
+
+class OllamaModels(TypedDict):
+    gen: str
+    embed: str
+    judge: str
 
 
 class GenerateClient(Protocol):
@@ -106,7 +140,8 @@ class _OllamaGenerate:
     def __init__(self, model: str | None = None) -> None:
         from ollama import Client
 
-        self._model = model or os.getenv("OLLAMA_GEN_MODEL", "qwen3:8b")
+        _verify_ollama_host()  # fail-fast on non-loopback host without opt-in
+        self._model = model or _resolve_ollama_models()["gen"]
         self._client = Client(host=os.getenv("OLLAMA_HOST"))
 
     def generate(self, prompt: str, *, max_tokens: int = 1024) -> str:
@@ -129,7 +164,8 @@ class _OllamaEmbed:
     def __init__(self, model: str | None = None) -> None:
         from ollama import Client
 
-        self._model = model or os.getenv("OLLAMA_EMBED_MODEL", "qwen3-embedding:0.6b")
+        _verify_ollama_host()  # fail-fast on non-loopback host without opt-in
+        self._model = model or _resolve_ollama_models()["embed"]
         self._client = Client(host=os.getenv("OLLAMA_HOST"))
 
     def embed(self, texts: list[str]) -> list[list[float]]:
@@ -152,6 +188,76 @@ def _resolve_provider(provider: Provider | None) -> Provider:
     return DEFAULT_PROVIDER
 
 
+def _resolve_ollama_models() -> OllamaModels:
+    """Return generation / embedding / judge model ids in one typed dict.
+
+    Used by `clients.py` itself (gen + embed) and by `examples/evaluate.py`
+    (judge) so all three resolution paths share env naming and defaults.
+    """
+    return {
+        "gen": os.getenv("OLLAMA_GEN_MODEL", "qwen3:8b"),
+        "embed": os.getenv("OLLAMA_EMBED_MODEL", "qwen3-embedding:0.6b"),
+        "judge": os.getenv("OLLAMA_JUDGE_MODEL", "qwen3:8b"),
+    }
+
+
+def _verify_ollama_host() -> tuple[str, str, str]:
+    """Validate OLLAMA_HOST and return (raw_host, scheme, hostname).
+
+    Centralises the remote-host opt-in check so both the native Ollama SDK
+    (`_OllamaGenerate` / `_OllamaEmbed`) and the OpenAI-compatible eval path
+    refuse to send data off-box before any request is made.
+
+    Raises RuntimeError on non-loopback hosts without `ALLOW_REMOTE_OLLAMA=1`.
+    """
+    raw_host = os.getenv("OLLAMA_HOST", _OLLAMA_DEFAULT_HOST).strip() or _OLLAMA_DEFAULT_HOST
+    parsed = urlparse(raw_host if "://" in raw_host else f"http://{raw_host}")
+    hostname = (parsed.hostname or "").lower()
+
+    # 0.0.0.0 as a client target reaches the local daemon, so we treat it as
+    # loopback for the client; but the value still signals that the daemon
+    # itself might be bound to all interfaces, which we cannot inspect.
+    if hostname == "0.0.0.0":
+        print(
+            "[clients] WARNING: OLLAMA_HOST=0.0.0.0 — ensure the Ollama daemon "
+            "is bound to loopback (the client cannot verify the daemon bind).",
+            file=sys.stderr,
+        )
+    elif hostname not in _LOOPBACK_HOSTS:
+        allow_remote = os.getenv("ALLOW_REMOTE_OLLAMA", "").lower() in {"1", "true", "yes"}
+        if not allow_remote:
+            raise RuntimeError(
+                f"OLLAMA_HOST resolves to non-loopback host {hostname!r}. "
+                "Refusing to send evaluation data to a remote Ollama daemon. "
+                "Set ALLOW_REMOTE_OLLAMA=1 to opt in (and prefer HTTPS for non-LAN targets)."
+            )
+        if parsed.scheme != "https":
+            print(
+                f"[clients] WARNING: OLLAMA_HOST points at non-HTTPS remote host {hostname!r}. "
+                "Eval prompts and contexts will be sent in cleartext.",
+                file=sys.stderr,
+            )
+    return raw_host, parsed.scheme, hostname
+
+
+def _resolve_ollama_openai_base_url() -> str:
+    """Return an OpenAI-compatible base URL for the local Ollama daemon.
+
+    Ollama exposes an OpenAI-compatible chat/embedding API at
+    `<host>/v1` (https://github.com/ollama/ollama/blob/main/docs/openai.md).
+    Host validation is delegated to `_verify_ollama_host()` so the same
+    safety guard fires regardless of which transport the caller uses.
+
+    Default: http://localhost:11434/v1
+    """
+    raw_host, _scheme, _hostname = _verify_ollama_host()
+    parsed = urlparse(raw_host if "://" in raw_host else f"http://{raw_host}")
+    base_path = (parsed.path or "").rstrip("/")
+    if not base_path.endswith("/v1"):
+        base_path = f"{base_path}/v1"
+    return urlunparse((parsed.scheme, parsed.netloc, base_path, "", "", ""))
+
+
 def get_clients(*, mock: bool | None = None, provider: Provider | None = None) -> Clients:
     """Return generate/embed clients.
 
@@ -172,3 +278,76 @@ def get_clients(*, mock: bool | None = None, provider: Provider | None = None) -
     if resolved == "ollama":
         return Clients(generate=_OllamaGenerate(), embed=_OllamaEmbed())
     return Clients(generate=_AnthropicGenerate(), embed=_OpenAIEmbed())
+
+
+def _resolve_corpus_version(version: CorpusVersion | None = None) -> CorpusVersion:
+    """Pick the corpus version from explicit arg, RAG_CORPUS_VERSION env, or default v2."""
+    if version is not None:
+        if version not in _VALID_CORPUS_VERSIONS:
+            raise ValueError(
+                f"corpus version {version!r} is not one of {sorted(_VALID_CORPUS_VERSIONS)}"
+            )
+        return version
+    env = os.getenv("RAG_CORPUS_VERSION", "").strip().lower()
+    if env in _VALID_CORPUS_VERSIONS:
+        return env  # type: ignore[return-value]
+    if env:
+        # Unknown value: warn but fall back so a typo does not crash imports.
+        print(
+            f"[clients] WARNING: RAG_CORPUS_VERSION={env!r} not recognized; "
+            f"using default {DEFAULT_CORPUS_VERSION}.",
+            file=sys.stderr,
+        )
+    return DEFAULT_CORPUS_VERSION
+
+
+def get_corpus_dir(*, version: CorpusVersion | None = None) -> Path:
+    """Return the absolute path to the active corpus directory.
+
+    Picks `corpus/v1` or `corpus/v2` based on the explicit `version=` arg or
+    the RAG_CORPUS_VERSION env var (default: v2 — the ADR 0004 baseline that
+    matches the rewritten article narrative). Raises FileNotFoundError if the
+    target directory is missing, so example scripts fail fast instead of
+    silently loading zero documents.
+    """
+    resolved = _resolve_corpus_version(version)
+    path = _REPO_ROOT / "corpus" / resolved
+    if not path.is_dir():
+        raise FileNotFoundError(
+            f"corpus directory {path} does not exist. "
+            f"Place {resolved} corpus files there or set RAG_CORPUS_VERSION accordingly."
+        )
+    return path
+
+
+def get_golden_set_path(*, version: CorpusVersion | None = None) -> Path:
+    """Return the absolute path to the active golden_set.jsonl.
+
+    v1 keeps the legacy root location (`golden_set.jsonl`) so existing tags
+    and the v1 narrative remain reproducible. v2 lives under the corpus
+    directory (`corpus/v2/golden_set.jsonl`) so the corpus and its evaluation
+    set are co-located. Raises FileNotFoundError if missing.
+    """
+    resolved = _resolve_corpus_version(version)
+    if resolved == "v1":
+        path = _REPO_ROOT / "golden_set.jsonl"
+    else:
+        path = _REPO_ROOT / "corpus" / resolved / "golden_set.jsonl"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"golden_set file {path} does not exist for corpus version {resolved}."
+        )
+    return path
+
+
+def get_eval_report_path(*, version: CorpusVersion | None = None) -> Path:
+    """Return the absolute path where evaluate.py writes its full report.
+
+    The file lives at the repo root so v1 / v2 reports sit side-by-side for
+    easy diffing. v1 keeps the legacy `eval_report.json` filename; v2 uses
+    `eval_report.v2.json`.
+    """
+    resolved = _resolve_corpus_version(version)
+    if resolved == "v1":
+        return _REPO_ROOT / "eval_report.json"
+    return _REPO_ROOT / f"eval_report.{resolved}.json"
