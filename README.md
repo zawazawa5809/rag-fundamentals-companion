@@ -59,11 +59,13 @@ uv run python -m examples.generation.run
 uv run python -m examples.evaluate    # Part 4 RAGAs (judge も Ollama に流れる)
 ```
 
-メモリ余力に合わせた tier:
+**所要時間の目安 (free ≠ fast)**: Part 1-3 / 5 の単発クエリはローカル Ollama でも数秒で返ります。一方 Part 4 の `examples.evaluate` は 30 件 × 3 pipeline × 4 指標 = 360 回の構造化判定を回すバッチ処理で、ローカル Ollama では **~76 分**かかります (48 GB Mac でも同程度。後述のとおり RAM ではなく GPU コア / メモリ帯域律速)。反復検証中は `--limit 5` で代表サンプルだけ回すか、judge だけ高速な API 経路 (`RAG_PROVIDER` を default の `anthropic_openai` に戻すと judge = `gpt-4o-mini`) に切り替えると待ち時間を大きく減らせます。「0 円」は事実ですが「速い」とは別の話で、free 経路の Part 4 はバッチとして重い、と割り切ってください。
+
+メモリ余力に合わせた tier (RAM はモデルが**収まるか**＝同時ロードできるかを決めるだけで、生成速度は GPU コア / メモリ帯域律速。RAM を増やしても単発生成は速くなりません):
 
 | RAM | 生成 | 埋め込み | 判定 (Part 4) |
 | --- | ---- | -------- | ------------- |
-| **16 GB Mac (推奨)** | `qwen3:8b` | `qwen3-embedding:0.6b` | `qwen3:8b` (共用) |
+| **16 GB Mac (モデルが収まる最小構成)** | `qwen3:8b` | `qwen3-embedding:0.6b` | `qwen3:8b` (共用) |
 | 32 GB+ | `qwen3:8b` | `qwen3-embedding:4b` | `qwen3:14b` (別ロードで self-preference 緩和) |
 | 8 GB | `qwen3:4b` | `qwen3-embedding:0.6b` | `qwen3:4b` (共用) |
 
