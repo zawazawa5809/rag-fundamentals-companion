@@ -32,7 +32,6 @@ if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
 
 from clients import get_clients, get_corpus_dir  # noqa: E402
-
 from examples.retrieval.chunker import ChunkNode, chunk_corpus  # noqa: E402
 from examples.retrieval.embedder import dense_rank, embed_corpus  # noqa: E402
 from examples.retrieval.hybrid import (  # noqa: E402

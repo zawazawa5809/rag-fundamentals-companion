@@ -11,7 +11,6 @@ import re
 
 from rank_bm25 import BM25Okapi  # type: ignore[import-untyped]
 
-
 _LATIN_RE = re.compile(r"[A-Za-z0-9]+")
 _JA_RUN_RE = re.compile(r"[一-龯ぁ-んァ-ヴー]+")
 

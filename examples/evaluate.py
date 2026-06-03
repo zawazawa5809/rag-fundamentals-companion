@@ -55,7 +55,6 @@ from clients import (  # noqa: E402
     get_eval_report_path,
     get_golden_set_path,
 )
-
 from examples.retrieval.chunker import ChunkNode, chunk_corpus  # noqa: E402
 from examples.retrieval.embedder import dense_rank, embed_corpus  # noqa: E402
 from examples.retrieval.hybrid import (  # noqa: E402
@@ -64,7 +63,6 @@ from examples.retrieval.hybrid import (  # noqa: E402
     build_bm25,
     rrf_fuse,
 )
-from rag.prompt_builder import CitedChunk, build_messages  # noqa: E402
 from rag.reranker import get_reranker  # noqa: E402
 
 CORPUS_DIR = get_corpus_dir()
@@ -406,7 +404,7 @@ async def _evaluate(
     scorers = None if mock else _build_real_scorers(provider)
 
     for entry in golden:
-        for code, (label, run) in pipelines.items():
+        for code, (_label, run) in pipelines.items():
             ans = run(entry.query)
             if mock:
                 s = Scores(
@@ -424,7 +422,7 @@ async def _evaluate(
     print(f"\n[summary] (judge: {_judge_label(mock, provider)})")
     header = f"  {'pipeline':<32} " + "  ".join(f"{m:<20}" for m in METRICS)
     print(header)
-    for code, rep in reports.items():
+    for _code, rep in reports.items():
         avg = rep.averages()
         row = f"  {rep.name:<32} "
         row += f"{avg.faithfulness:<20.4f}"
@@ -440,7 +438,7 @@ async def _evaluate(
             f"\n[warn] {total_failures}/{total_cells} metric cells failed to score "
             f"(excluded from averages; see [warn] lines above)."
         )
-        for code, rep in reports.items():
+        for _code, rep in reports.items():
             if rep.failure_count():
                 print(f"  - {rep.name}: {rep.failure_count()} cell(s)")
 

@@ -27,9 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
-from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -47,7 +45,6 @@ from clients import (  # noqa: E402
     get_clients,
     get_corpus_dir,
 )
-
 from examples.retrieval.chunker import chunk_corpus  # noqa: E402
 
 # Maps the CLI shorthand to (provider name, embedding model id) for reporting.
@@ -142,7 +139,7 @@ def doc_ranks_from_chunk_sims(
 ) -> list[tuple[str, float]]:
     """Aggregate chunk-level sims to doc-level (best chunk wins). Returns ranked list desc."""
     best: dict[str, float] = {}
-    for chunk_id, sim in zip(chunk_ids, chunk_sims):
+    for chunk_id, sim in zip(chunk_ids, chunk_sims, strict=True):
         slug = doc_slug_of(chunk_id)
         if slug not in best or sim > best[slug]:
             best[slug] = float(sim)
@@ -216,7 +213,7 @@ def run_model(
 
         # similarity matrix payload — record top-K per query to keep file size bounded.
         chunk_sim_pairs = sorted(
-            ((cid, float(s)) for cid, s in zip(chunk_ids, last_sims)),
+            ((cid, float(s)) for cid, s in zip(chunk_ids, last_sims, strict=True)),
             key=lambda kv: kv[1],
             reverse=True,
         )[:TOP_K_REPORT]

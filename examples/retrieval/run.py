@@ -17,10 +17,8 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 from clients import get_clients, get_corpus_dir
-
 from examples.retrieval.chunker import ChunkNode, chunk_corpus
 from examples.retrieval.embedder import dense_rank, embed_corpus
 from examples.retrieval.hybrid import apply_status_filter, bm25_rank, build_bm25, rrf_fuse
